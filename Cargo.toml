@@ -1,0 +1,3 @@
+[workspace]
+members = ["hab_tool"]
+resolver = "3"
