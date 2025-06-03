@@ -1,3 +1,3 @@
 [workspace]
-members = ["hab_tool"]
+members = ["hab_tool", "pixelconv"]
 resolver = "3"
