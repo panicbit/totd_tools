@@ -63,25 +63,45 @@ fn handle_entry(cli: &Cli, entry: walkdir::Result<DirEntry>) -> Result<()> {
     let raw_data = File::open(&raw_path).with_context(|| format!("{raw_path:?}"))?;
     let mut raw_data = BufReader::new(raw_data);
 
-    for (i, entry) in bank_header.entries().enumerate() {
-        let mut image = entry
-            .load_texture_from_reader(&mut raw_data)
-            .with_context(|| format!("texture entry {i}"))
-            .with_context(|| format!("{raw_path:?}"))
-            .with_context(|| format!("{path:?}"))?;
+    for (index, entry) in bank_header.entries().enumerate() {
+        if let Err(err) = save_header(&out_dir, index, entry) {
+            eprintln!("failed to save header for texture {index} of {raw_path:?}: {err:?}");
+            continue;
+        }
 
-        let out_path = out_dir.join(format!("{i:02}.png"));
-
-        imageops::flip_vertical_in_place(&mut image);
-
-        image
-            .save_with_format(&out_path, ImageFormat::Png)
-            .with_context(|| format!("{out_path:?}"))?;
-
-        let header_json_path = out_path.with_extension("json");
-        let header_json = serde_json::to_string_pretty(entry)?;
-        fs::write(header_json_path, header_json)?;
+        if let Err(err) = save_texture(&out_dir, &mut raw_data, index, entry) {
+            eprintln!("failed to save texture {index} of {raw_path:?}: {err:?}");
+            continue;
+        }
     }
+
+    Ok(())
+}
+
+fn save_header(out_dir: &Path, index: usize, entry: &TextureInfo) -> Result<()> {
+    let out_path = out_dir.join(format!("{index:02}.json"));
+    let header_json_path = out_path.with_extension("json");
+    let header_json = serde_json::to_string_pretty(entry)?;
+
+    fs::write(header_json_path, header_json)?;
+
+    Ok(())
+}
+
+fn save_texture(
+    out_dir: &Path,
+    raw_data: &mut BufReader<File>,
+    index: usize,
+    entry: &TextureInfo,
+) -> Result<(), anyhow::Error> {
+    let mut image = entry.load_texture_from_reader(raw_data)?;
+    let out_path = out_dir.join(format!("{index:02}.png"));
+
+    imageops::flip_vertical_in_place(&mut image);
+
+    image
+        .save_with_format(&out_path, ImageFormat::Png)
+        .with_context(|| format!("{out_path:?}"))?;
 
     Ok(())
 }
@@ -153,7 +173,6 @@ impl TextureInfo {
     where
         R: BufRead + Seek,
     {
-        eprintln!("offset is: {}", self.offset);
         reader.seek(SeekFrom::Start(self.offset as u64))?;
 
         let pixels = self.read_pixel_data(reader)?;
